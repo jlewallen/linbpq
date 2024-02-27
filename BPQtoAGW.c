@@ -171,6 +171,24 @@ static fd_set writefs;
 static fd_set errorfs;
 static struct timeval timeout;
 
+static  FILE *agw_fp = NULL;
+
+void agw_debug_open() {
+	if (agw_fp == NULL) {
+		agw_fp = fopen("agw.data", "a+");
+	}
+}
+
+void agw_debug(char *data, size_t len) {
+	for (size_t i = 0; i < len; ++i) {
+		if (i == 0) {
+			fprintf(agw_fp, "%02x", data[i] & 0xff);
+		} else {
+			fprintf(agw_fp, ":%02x", data[i] & 0xff);
+		}
+	}
+}
+
 
 static size_t ExtProc(int fn, int port, PMESSAGE buff)
 {
@@ -245,6 +263,11 @@ static size_t ExtProc(int fn, int port, PMESSAGE buff)
 
 						bytes = send(AGWSock[port], (const char FAR *)&txbuff, txlen, 0);
 
+						fprintf(agw_fp, "> ");
+						agw_debug((char *)&txbuff, txlen);
+						fprintf(agw_fp, "\n");
+						fflush(agw_fp);
+
 						ReleaseBuffer(buffptr);
 					}
 				}
@@ -310,6 +333,11 @@ static size_t ExtProc(int fn, int port, PMESSAGE buff)
 		txlen+=sizeof(AGWHeader);
 
 		bytes=send(AGWSock[MasterPort[port]],(const char FAR *)&txbuff, txlen, 0);
+
+		fprintf(agw_fp, "> ");
+		agw_debug((char *)&txbuff, txlen);
+		fprintf(agw_fp, "\n");
+		fflush(agw_fp);
 		
 		if (bytes != txlen)
 		{
@@ -348,7 +376,9 @@ void * AGWExtInit(struct PORTCONTROL *  PortEntry)
 {
 	int i, port;
 	char Msg[255];
-	
+
+	agw_debug_open();
+
 	//
 	//	Will be called once for each AGW port to be mapped to a BPQ Port
 	//	The AGW port number is in CHANNEL - A=0, B=1 etc
@@ -722,6 +752,13 @@ int ProcessReceivedData(int port)
 			{
 				bytes = recv(AGWSock[port],(char *)&Message,datalen,0);
 			}
+
+			fprintf(agw_fp, "< ");
+			agw_debug((char *)&RXHeader, sizeof(RXHeader));
+			fprintf(agw_fp, ":");
+			agw_debug((char *)&Message, datalen);
+			fprintf(agw_fp, "\n");
+			fflush(agw_fp);
 
 			// Have header, and data if needed
 
