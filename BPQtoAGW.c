@@ -189,6 +189,164 @@ void agw_debug(char *data, size_t len) {
 	}
 }
 
+typedef struct ack_queue_entry_t {
+	struct _LINKTABLE *link;
+} ack_queue_entry_t;
+
+#define MAX_QUEUE_DEPTH 256 * 3
+
+typedef struct ack_state_t {
+	pthread_mutex_t lock;
+	ack_queue_entry_t buffer[MAX_QUEUE_DEPTH];
+	ack_queue_entry_t *end;
+	ack_queue_entry_t *head;
+	ack_queue_entry_t *tail;
+	size_t pending;
+} ack_state_t;
+
+static ack_state_t ack_state;
+
+void agw_ack_initialize() {
+	memset(&ack_state, 0, sizeof(ack_state_t));
+	ack_state.end = ack_state.buffer + MAX_QUEUE_DEPTH;
+	ack_state.head = ack_state.buffer;
+	ack_state.tail = ack_state.buffer;
+}
+
+void agw_ack_send_queued(PMESSAGE pm) {
+	pthread_mutex_lock(&ack_state.lock);
+
+	if (ack_state.pending == MAX_QUEUE_DEPTH) {
+		pthread_mutex_unlock(&ack_state.lock);
+		fprintf(stderr, "agw-ack queue depth exceeded\n");
+		return;
+	}
+
+	if (pm->Linkptr != NULL) {
+		printf("agw-ack-queued[%ld]: %p\n", ack_state.pending, pm->Linkptr);
+		ack_state.head->link = pm->Linkptr;
+	} else {
+		printf("agw-ack-queued[%ld]: noop\n", ack_state.pending);
+		ack_state.head->link = NULL;
+	}
+
+	ack_state.pending++;
+	ack_state.head++;
+	if (ack_state.head == ack_state.end) {
+		ack_state.head = ack_state.buffer;
+	}
+
+	pm->Linkptr = NULL;
+	pthread_mutex_unlock(&ack_state.lock);
+}
+
+#define ASCII_CALL_LENGTH  10
+#define ASCII_ALIAS_LENGTH 6
+
+static int32_t compare_ascii_callsigns(const char *a, const char *b, size_t n) {
+	if (n == 0) {
+		return 0;
+	}
+	do {
+		if (*a != *b) {
+			if ((*a == ' ' || *a == 0) && (*b == ' ' || *b == 0)) {
+				break;
+			}
+			return (*(unsigned char *)a - *(unsigned char *)b);
+		}
+		++a;
+		++b;
+	}
+	while (--n != 0);
+
+	return 0;
+}
+
+static int32_t agw_ack_to_one_of_our_calls(struct AGWHEADER *header) {
+	if (compare_ascii_callsigns(MYNODECALL, header->callfrom, ASCII_CALL_LENGTH) == 0) {
+		return 1;
+	}
+
+	if (compare_ascii_callsigns(MYALIASTEXT, header->callfrom, ASCII_ALIAS_LENGTH) == 0) {
+		return 1;
+	}
+
+	APPLCALLS *application_calls = APPLCALLTABLE;
+	for (size_t i = 0u; i < NumberofAppls; ++i) {
+		if (application_calls[i].APPLCALL[0] > 0x40) { // Valid ax.25 addr
+			// printf("application[%ld] = '%s' ('%s')\n", i, application_calls[i].APPLCALL_TEXT, header->callfrom);
+			if (compare_ascii_callsigns(application_calls[i].APPLCALL_TEXT, header->callfrom, ASCII_CALL_LENGTH) == 0) {
+				return 1;
+			}
+
+			// printf("application[%ld] = '%s' ('%s')\n", i, application_calls[i].APPLALIAS_TEXT, header->callfrom);
+			if (compare_ascii_callsigns(application_calls[i].APPLALIAS_TEXT, header->callfrom, ASCII_CALL_LENGTH) == 0) {
+				return 1;
+			}
+		}
+	}
+
+	// printf("my-node-call = '%s' ('%s')\n", MYNODECALL, header->callfrom);
+	// printf("my-node-alias = '%s' ('%s')\n", MYALIASTEXT, header->callfrom);
+
+	return 0;
+}
+
+static int32_t agw_ack_check_origin(struct AGWHEADER *header) {
+	for (size_t i = 0u; i < MAXLINKS; ++i) {
+		if (LINKS[i].OURCALL[0]) {
+			char our_call[ASCII_CALL_LENGTH + 1] = { 0 };
+			memset(our_call, 0, sizeof(our_call));
+			ConvFromAX25(LINKS[i].OURCALL, our_call);
+			// printf("link[%ld] = '%s' ('%s')\n", i, our_call, header->callfrom);
+			if (compare_ascii_callsigns(our_call, header->callfrom, ASCII_CALL_LENGTH) == 0) {
+				return i;
+			}
+		}
+	}
+
+	return -1;
+}
+
+void agw_ack_send_confirmed(struct AGWHEADER *header) {
+	printf("agw-ack-confirm %s -> %s\n", header->callfrom, header->callto);
+
+	if (!agw_ack_to_one_of_our_calls(header)) {
+		if (agw_ack_check_origin(header) < 0) {
+			fprintf(stderr, "agw-ack-other-call\n");
+			return;
+		}
+	}
+
+	pthread_mutex_lock(&ack_state.lock);
+
+	if (ack_state.pending == 0) {
+		pthread_mutex_unlock(&ack_state.lock);
+		fprintf(stderr, "agw-ack-confirm queue empty!\n");
+		return;
+	}
+
+	ack_state.pending--;
+
+	struct _LINKTABLE *link = ack_state.tail->link;
+	if (link != NULL) {
+		if (link->L2TIMER) {
+			printf("agw-ack-confirm[%ld]: L2 = %d\n", ack_state.pending, link->L2TIME);
+			link->L2TIMER = link->L2TIME;
+		} else {
+			printf("agw-ack-confirm[%ld]: L2 inactive (?)\n", ack_state.pending);
+		}
+	} else {
+		printf("agw-ack-confirm[%ld]: noop\n", ack_state.pending);
+	}
+
+	ack_state.tail++;
+	if (ack_state.tail == ack_state.end) {
+		ack_state.tail = ack_state.buffer;
+	}
+
+	pthread_mutex_unlock(&ack_state.lock);
+}
 
 static size_t ExtProc(int fn, int port, PMESSAGE buff)
 {
@@ -263,6 +421,9 @@ static size_t ExtProc(int fn, int port, PMESSAGE buff)
 
 						bytes = send(AGWSock[port], (const char FAR *)&txbuff, txlen, 0);
 
+						// This cast is ugly.
+						agw_ack_send_queued((PMESSAGE)buffptr);
+
 						fprintf(agw_fp, "> ");
 						agw_debug((char *)&txbuff, txlen);
 						fprintf(agw_fp, "\n");
@@ -315,6 +476,8 @@ static size_t ExtProc(int fn, int port, PMESSAGE buff)
 
 		// AGW has a control byte on front, so only subtract 6 from BPQ length
 
+		// Jacob: This cast seems dangerous, as the structure of these vary
+		// around the pid field? 
 		txlen = GetLengthfromBuffer((PDATAMESSAGE)buff);
 		txlen -= (MSGHDDRLEN - 1);
 		
@@ -333,6 +496,8 @@ static size_t ExtProc(int fn, int port, PMESSAGE buff)
 		txlen+=sizeof(AGWHeader);
 
 		bytes=send(AGWSock[MasterPort[port]],(const char FAR *)&txbuff, txlen, 0);
+
+		agw_ack_send_queued(buff);
 
 		fprintf(agw_fp, "> ");
 		agw_debug((char *)&txbuff, txlen);
@@ -655,6 +820,8 @@ VOID ConnecttoAGWThread(void * portptr)
 		if (AGWSignon[port])
 			send(AGWSock[port],AGWSignon[port],546,0);
 
+		agw_ack_initialize();
+
 		// Request Raw Frames
 
 		AGWHeader.Port=0;
@@ -797,6 +964,17 @@ int ProcessReceivedData(int port)
 				memcpy(buffptr->Data, &Message, datalen);
 
 				C_Q_ADD(&AGWtoBPQ_Q[BPQPort[RXHeader.Port][MasterPort[port]]], buffptr);
+			}
+
+			if (RXHeader.DataKind == 'T') // monitored own information
+			{
+				// printf("agw-own-information\n");
+
+				//	Make sure it is for a port we want - we may not be using all AGW ports
+				if (BPQPort[RXHeader.Port][MasterPort[port]] == 0)
+					return (0);
+
+				agw_ack_send_confirmed(&RXHeader);
 			}
 
 			return (0);

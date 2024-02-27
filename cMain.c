@@ -281,7 +281,7 @@ VOID LINKTX(PEXTPORTDATA PORTVEC, PMESSAGE Buffer)
 		if (LINK->L2TIMER)
 			LINK->L2TIMER = LINK->L2TIME;
 
-		printf("jacob[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
+		printf("agw-ack[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
 		Buffer->Linkptr = 0;	// CLEAR FLAG FROM BUFFER
 	}
 
@@ -368,12 +368,12 @@ VOID EXTTX(PEXTPORTDATA PORTVEC, MESSAGE * Buffer)
 
 // #if JACOB_WAS_HERE_DISABLING_FOR_AGW_ACKMODE
 // Moved this to after the function call so the callee has access to Linkptr.
-	if (LINK)
+	if (LINK != NULL && LINK == Buffer->Linkptr)
 	{
 		if (LINK->L2TIMER)
 			LINK->L2TIMER = LINK->L2TIME;
 
-		printf("jacob[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
+		printf("agw-ack[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
 		Buffer->Linkptr = 0;	// CLEAR FLAG FROM BUFFER
 	}
 // #endif
@@ -2104,7 +2104,7 @@ VOID TIMERINTERRUPT()
 			if (LINK->L2TIMER)
 				LINK->L2TIMER = LINK->L2TIME;
 
-			printf("jacob[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
+			printf("agw-ack[%s:%d]: linkptr cleared\n", __FILE__, __LINE__);
 			Buffer->Linkptr = 0;	// CLEAR FLAG FROM BUFFER
 		}
 
