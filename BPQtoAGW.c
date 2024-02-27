@@ -663,6 +663,12 @@ VOID ConnecttoAGWThread(void * portptr)
 
 		send(AGWSock[port],(const char FAR *)&AGWHeader,sizeof(AGWHeader),0);
 
+
+		AGWHeader.Port=0;
+		AGWHeader.DataKind='m';
+		AGWHeader.DataLength=0;
+
+		send(AGWSock[port],(const char FAR *)&AGWHeader,sizeof(AGWHeader),0);
 		return;
 	}
 	else
