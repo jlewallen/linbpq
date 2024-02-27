@@ -663,12 +663,22 @@ VOID ConnecttoAGWThread(void * portptr)
 
 		send(AGWSock[port],(const char FAR *)&AGWHeader,sizeof(AGWHeader),0);
 
+		fprintf(agw_fp, "> ");
+		agw_debug((char *)&AGWHeader, sizeof(AGWHeader));
+		fprintf(agw_fp, "\n");
+		fflush(agw_fp);
 
 		AGWHeader.Port=0;
 		AGWHeader.DataKind='m';
 		AGWHeader.DataLength=0;
 
 		send(AGWSock[port],(const char FAR *)&AGWHeader,sizeof(AGWHeader),0);
+
+		fprintf(agw_fp, "> ");
+		agw_debug((char *)&AGWHeader, sizeof(AGWHeader));
+		fprintf(agw_fp, "\n");
+		fflush(agw_fp);
+
 		return;
 	}
 	else
