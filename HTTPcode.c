@@ -1610,10 +1610,10 @@ int InnerProcessHTTPMessage(struct ConnectionInfo * conn)
 	char PortsHddr[] = "<h2 align=center>Ports</h2><table align=center border=2 bgcolor=white>"
 		"<tr><th>Port</th><th>Driver</th><th>ID</th><th>Beacons</th><th>Driver Window</th></tr>";
 
-	char PortLine[] = "<tr><td>%d</td><td><a href=PortStats?%d&%s>&nbsp;%s</a></td><td>%s</td></tr>";
+	char PortLine[] = "<tr><td>%d</td><td><a href=PortStats?%d&%s>%s</a></td><td>%s</td></tr>";
 
-	char PortLineWithBeacon[] = "<tr><td>%d</td><td><a href=PortStats?%d&%s>&nbsp;%s</a></td><td>%s</td>"
-		"<td><a href=PortBeacons?%d>&nbsp;Beacons</a><td> </td></td></tr>\r\n";
+	char PortLineWithBeacon[] = "<tr><td>%d</td><td><a href=PortStats?%d&%s>%s</a></td><td>%s</td>"
+		"<td><a href=PortBeacons?%d>Beacons</a><td> </td></td></tr>\r\n";
 
 	char SessionPortLine[] = "<tr><td>%d</td><td>%s</td><td>%s</td><td> </td>"
 		"<td> </td></tr>\r\n";
@@ -1623,7 +1623,7 @@ int InnerProcessHTTPMessage(struct ConnectionInfo * conn)
 
 
 	char PortLineWithBeaconAndDriver[] = "<tr><td>%d</td><td>%s</td><td>%s</td>"
-		"<td><a href=PortBeacons?%d>&nbsp;Beacons</a></td>"
+		"<td><a href=PortBeacons?%d>Beacons</a></td>"
 		"<td><a href=\"javascript:dev_win('/Node/Port?%d',%d,%d,%d,%d);\">Driver Window</a></td></tr>\r\n";
 
 	char RigControlLine[] = "<tr><td>%d</td><td>%s</td><td>%s</td><td> </td>"
