@@ -205,9 +205,11 @@ static BOOL CALLBACK EnumTNCWindowsProc(HWND hwnd, LPARAM  lParam)
 
 
 
-void RegisterAPPLCalls(struct TNCINFO * TNC, BOOL Unregister)
+void RegisterAPPLCalls(struct TNCINFO * TNC, BOOL Unregister, int port)
 {
 	// Register/Deregister Nodecall and all applcalls
+
+	fprintf(stderr, "sock(%d) port(%d) register-appl-calls\n", TNC->TCPSock, port);
 
 	struct AGWINFO * AGW;
 	APPLCALLS * APPL;
@@ -224,7 +226,7 @@ void RegisterAPPLCalls(struct TNCINFO * TNC, BOOL Unregister)
 	AGW = TNC->AGWInfo;
 
 	
-	AGW->TXHeader.Port=0;
+	AGW->TXHeader.Port=UZ7HOChannel[port];
 	AGW->TXHeader.DataLength=0;
 
 	if (Unregister)
@@ -352,7 +354,12 @@ VOID UZ7HOSuspendPort(struct TNCINFO * TNC, struct TNCINFO * ThisTNC)
 	TNC->PortRecord->PORTCONTROL.PortSuspended = TRUE;
 	strcpy(TNC->WEB_TNCSTATE, "Interlocked");
 	MySetWindowText(TNC->xIDC_TNCSTATE, TNC->WEB_TNCSTATE);
-	RegisterAPPLCalls(TNC, TRUE);
+
+	for (int other = 0; other < MAXBPQPORTS; other++) {
+		if (MasterPort[other] == TNC->Port) {
+			RegisterAPPLCalls(TNC, TRUE, other);
+		}
+	}
 }
 
 VOID UZ7HOReleasePort(struct TNCINFO * TNC)
@@ -361,7 +368,11 @@ VOID UZ7HOReleasePort(struct TNCINFO * TNC)
 	strcpy(TNC->WEB_TNCSTATE, "Free");
 	MySetWindowText(TNC->xIDC_TNCSTATE, TNC->WEB_TNCSTATE);
 
-	RegisterAPPLCalls(TNC, FALSE);
+	for (int other = 0; other < MAXBPQPORTS; other++) {
+		if (MasterPort[other] == TNC->Port) {
+			RegisterAPPLCalls(TNC, FALSE, other);
+		}
+	}
 }
 
 int UZ7HOSetFreq(int port, struct TNCINFO * TNC, struct AGWINFO * AGW, PDATAMESSAGE buff, PMSGWITHLEN buffptr)
@@ -696,8 +707,13 @@ static size_t ExtProc(int fn, int port, PDATAMESSAGE buff)
 					{
 						AGW->LastParamTime = ltime;
 
-						if (TNC->PortRecord->PORTCONTROL.PortSuspended == FALSE)
-							RegisterAPPLCalls(TNC, FALSE);
+						if (TNC->PortRecord->PORTCONTROL.PortSuspended == FALSE) {
+							for (int other = 0; other < MAXBPQPORTS; other++) {
+								if (MasterPort[other] == port) {
+									RegisterAPPLCalls(TNC, FALSE, other);		// Register Calls
+								}
+							}
+						}
 					}
 				}
 			}
@@ -762,7 +778,7 @@ static size_t ExtProc(int fn, int port, PDATAMESSAGE buff)
 
 						// Request Raw Frames
 
-						AGW->TXHeader.Port = 0;
+						AGW->TXHeader.Port = UZ7HOChannel[port];
 						AGW->TXHeader.DataKind = 'k';		// Raw Frames
 						AGW->TXHeader.DataLength = 0;
 						send(TNC->TCPSock, (const char FAR *)&AGW->TXHeader, AGWHDDRLEN, 0);
@@ -1946,7 +1962,18 @@ VOID ConnecttoUZ7HOThread(void * portptr)
 	}
 
 	TNC->LastFreq = 0;					// so V4 display will be updated
-	RegisterAPPLCalls(TNC, FALSE);		// Register Calls
+
+	// Multiple ports can share the same connection, specifically if they're
+	// using different Channels. Now that we're connected, we need to register
+	// the desired calls for each of those port/channel combinations. Without
+	// this, incoming connections on ports that aren't the 'MasterPort' will be
+	// ignored, as the AGW server doesn't have any calls associated with that
+	// channel.
+	for (int other = 0; other < MAXBPQPORTS; other++) {
+		if (MasterPort[other] == port) {
+			RegisterAPPLCalls(TNC, FALSE, other);		// Register Calls
+		}
+	}
 
 	return;
 
